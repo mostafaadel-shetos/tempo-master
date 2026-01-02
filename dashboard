@@ -1,0 +1,1812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tempo Master Dashboard</title>
+    
+    <!-- 1. Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 2. Configure Tailwind -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class', 
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.2s ease-out',
+                        'slide-up': 'slideUp 0.3s ease-out',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { transform: 'translateY(10px)', opacity: '0' },
+                            '100%': { transform: 'translateY(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Fonts and Babel -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Force vertical scrollbar to prevent layout shift between pages */
+        html { overflow-y: scroll !important; }
+        
+        .scrollbar-thin::-webkit-scrollbar { width: 6px; }
+        .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+        .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
+        .dark .scrollbar-thin::-webkit-scrollbar-thumb { background-color: #475569; }
+        .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #3b82f6; width: 20px; height: 20px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Remove focus outline/box on click for charts */
+        *:focus { outline: none !important; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-200 font-sans">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useRef, useEffect } from 'https://esm.sh/react@18.2.0';
+        import { createRoot } from 'https://esm.sh/react-dom@18.2.0/client';
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
+        import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, writeBatch } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
+        import { Users, Search, Map as MapIcon, List, Filter, Mail, Phone, Briefcase, MapPin, Activity, UserCircle, Download, Upload, Building, UserCheck, Moon, Sun, Eye, EyeOff, X, Calendar, GraduationCap, Truck, MessageCircle, Hash, Heart, User, ChevronRight, BarChart3, ChevronDown, Edit2, Trash2, Save, PlusCircle, Database, LayoutGrid, CheckSquare, Square, PieChart, UserX, Clock, Shirt, Footprints, Home, WifiOff, AlertTriangle, ShieldAlert } from 'https://esm.sh/lucide-react@0.292.0?deps=react@18.2.0';
+        import { PieChart as RePieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'https://esm.sh/recharts@2.12.3?deps=react@18.2.0,react-dom@18.2.0';
+
+        // --- FIREBASE CONFIG ---
+        const FIREBASE_CONFIG = {
+            apiKey: "AIzaSyAJfMGnjV6xnN1ObOJjK7blBK0fCR0NZZk",
+            authDomain: "tempomaster1-18ac4.firebaseapp.com",
+            projectId: "tempomaster1-18ac4",
+            storageBucket: "tempomaster1-18ac4.firebasestorage.app",
+            messagingSenderId: "436233309908",
+            appId: "1:436233309908:web:48ece8321ceaec29593541",
+            measurementId: "G-ZEWW47WNHY"
+        };
+
+        // --- GLOBAL APP ID ---
+        // Not used for root collection access, but kept for reference
+        const appId = 'tempo-dashboard-default';
+
+        let db = null;
+        let auth = null;
+        try {
+            const app = initializeApp(FIREBASE_CONFIG);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            console.log("Firebase initialized successfully");
+        } catch (e) {
+            console.error("Firebase Init Error:", e);
+        }
+
+        const DEPARTMENTS = [
+          "Management",
+          "Engineering - General",
+          "Member Experience",
+          "Accounting",
+          "IT",
+          "Admin",
+          "Data Collection"
+        ];
+
+        const TITLE_HIERARCHY = [
+          "Country Manager", "Site Director", "HR Manager", "Training & Development Manager", "Operation Manager", "Workforce Manager", "Program Manager", "Product Manager",
+          "Team Lead & Change Integration Manager", "QA Lead", "Team Lead", 
+          "Senior Front-End Engineer", "Senior Back-End Engineer", "Sr. Back-End Engineer", "Senior iOS Engineer", "Senior QA Engineer", "Senior Fitness Class QA Engineer", "Sr. General Accountant", "Senior Proctor",
+          "Front-End Engineer", "iOS Engineer I", "Fitness Class QA Engineer", "Systems Eng", "Data Analyst", "Workforce Analyst", "QA", "Proctor", "IT", "Logistics Specialist",
+          "T2/Mentor", "T2/Cancellation", "T2/Tech", "Social Media", "MX T1", "Office Boy"
+        ];
+
+        const INITIAL_DATA = [
+            {
+                name: "Salma Ramadan",
+                id: "253",
+                hr_id: "2578",
+                team_lead: "Cynthia Hernandez",
+                channel: "HR Manager",
+                title: "HR Manager",
+                wave: "W2",
+                dob: "09/28/1995",
+                joining_date: "07/05/2021",
+                status: "Active",
+                personal_email: "salmaragab444@gmail.com",
+                tempo_email: "salmaramadan@tempo.fit",
+                phone: "1093491999",
+                route: "N/A",
+                religion: "Muslim",
+                gender: "Female",
+                education: "N/A",
+                area: "Madint Nasr",
+                headset_sn: "H-FX016861",
+                nationality: "Egyptian",
+                photo: "",
+                department: "Management",
+                work_type: "Full Time",
+                third_party: "No",
+                source: "MX",
+                emergency_contact_name: "",
+                emergency_contact_phone: "",
+                tshirt_size: "M",
+                shoe_size: "38",
+                work_location: "Office"
+            },
+            {
+                name: "Khaled El Sabban",
+                id: "234",
+                hr_id: "2551",
+                team_lead: "Nancy Elsharony",
+                channel: "Operation Manager",
+                title: "Operation Manager",
+                wave: "W2",
+                dob: "07/15/1983",
+                joining_date: "06/23/2021",
+                status: "Active",
+                personal_email: "sabbansabban@gmail.com",
+                tempo_email: "khaledsabban@tempo.fit",
+                phone: "1206034066",
+                route: "October-Zayed",
+                religion: "Muslim",
+                gender: "Male",
+                education: "Graduated",
+                area: "",
+                headset_sn: "H-FX016897",
+                nationality: "Egyptian",
+                photo: "",
+                department: "Management",
+                work_type: "Full Time",
+                third_party: "",
+                source: "Tempo Tech",
+                emergency_contact_name: "",
+                emergency_contact_phone: "",
+                tshirt_size: "",
+                shoe_size: "",
+                work_location: "Office"
+            }
+        ];
+
+        // --- GLOBAL HELPER: Normalize any date string to MM/DD/YYYY ---
+        const normalizeDate = (val) => {
+            if (!val || val === 'N/A') return ''; // Return empty string for falsy/N/A to keep UI clean
+            
+            const strVal = String(val);
+
+            // 1. Check for MM/DD/YYYY format with regex
+            if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(strVal)) {
+                return strVal;
+            }
+
+            // 2. Check for MM-DD-YYYY format (with dashes) and convert to slashes
+            if (/^\d{1,2}-\d{1,2}-\d{4}$/.test(strVal)) {
+                return strVal.replace(/-/g, '/');
+            }
+
+            // 3. Check for D-MMM-YY or D-MMM-YYYY (Legacy)
+            const match = strVal.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2,4})$/);
+            if (match) {
+                const monthMap = { "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6, 
+                                   "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12 };
+                let year = parseInt(match[3], 10);
+                if (match[3].length === 2) year = year < 50 ? 2000 + year : 1900 + year;
+                const month = monthMap[match[2]];
+                if (month) {
+                    return `${String(month).padStart(2, '0')}/${match[1].padStart(2, '0')}/${year}`;
+                }
+            }
+            
+            // 4. Fallback for ISO YYYY-MM-DD
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return val; // Return original if parsing fails
+            
+            return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+        };
+
+        const calculateTenure = (dateString) => {
+            if (!dateString || dateString === 'N/A') return "N/A";
+            
+            // Normalize date for calculation to YYYY-MM-DD
+            let parseStr = "";
+            // Parse MM/DD/YYYY
+            const match = String(dateString).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+            if (match) {
+                // MM/DD/YYYY -> YYYY-MM-DD
+                parseStr = `${match[3]}-${match[1]}-${match[2]}`;
+            } else {
+                // Try normalizing first
+                const norm = normalizeDate(dateString);
+                const normMatch = String(norm).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (normMatch) {
+                    parseStr = `${normMatch[3]}-${normMatch[1]}-${normMatch[2]}`;
+                }
+            }
+
+            if (!parseStr) return "N/A";
+
+            const start = new Date(parseStr);
+            if (isNaN(start.getTime())) return "N/A";
+            const now = new Date();
+            let years = now.getFullYear() - start.getFullYear();
+            let months = now.getMonth() - start.getMonth();
+            let days = now.getDate() - start.getDate();
+            if (days < 0) { months--; days += new Date(now.getFullYear(), now.getMonth(), 0).getDate(); }
+            if (months < 0) { years--; months += 12; }
+            const parts = [];
+            if (years > 0) parts.push(`${years}Y`);
+            if (months > 0) parts.push(`${months}M`);
+            if (days > 0) parts.push(`${days}D`);
+            return parts.length > 0 ? parts.join(', ') : "0D";
+        };
+
+        // --- COMPONENTS ---
+        
+        const EditInputField = ({ label, name, type = "text", value, onChange }) => {
+            let displayValue = value || '';
+            const formatDateForInput = (dateString) => {
+                if (!dateString) return '';
+                
+                // Expect MM/DD/YYYY (or MM-DD-YYYY) in value, convert to YYYY-MM-DD for input type="date"
+                const normalized = normalizeDate(dateString);
+                const match = String(normalized).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if (match) {
+                    const [_, mm, dd, yyyy] = match;
+                    return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+                }
+
+                return '';
+            };
+
+            if (type === 'date') {
+               displayValue = formatDateForInput(displayValue);
+            }
+            return (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+                <input type={type} name={name} value={displayValue} onChange={onChange} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-slate-100"/>
+              </div>
+            );
+        };
+
+        const EditSelectField = ({ label, name, value, options, onChange }) => (
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wide">{label}</label>
+              <select name={name} value={value || ''} onChange={onChange} className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-slate-100">
+                <option value="">Select {label}</option>
+                {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            </div>
+        );
+
+        const ProfileField = ({ label, value, icon: Icon, className = "" }) => (
+            <div className={`flex flex-col justify-center gap-0.5 p-2 rounded-lg bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 ${className}`}>
+              <span className="text-[9px] uppercase font-bold tracking-wider text-slate-400 dark:text-slate-500 flex items-center gap-1">
+                {Icon && <Icon size={9} />} {label}
+              </span>
+              <span className="text-xs text-slate-900 dark:text-slate-100 font-semibold truncate leading-tight" title={value}>{value || "-"}</span>
+            </div>
+        );
+
+        const UnifiedField = ({ label, name, type = "text", value, onChange, isEdit, icon: Icon, options = [] }) => {
+             if (isEdit) {
+                 if (type === 'select') return <EditSelectField label={label} name={name} value={value} options={options} onChange={onChange} />;
+                 return <EditInputField label={label} name={name} type={type} value={value} onChange={onChange} />;
+             } else {
+                 return <ProfileField label={label} value={value} icon={Icon} />;
+             }
+        };
+
+        const StatusBadge = ({ status }) => {
+          const normalizedStatus = status ? status.toLowerCase().trim() : '';
+          let style = "bg-slate-200 text-slate-600 border-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:border-slate-600";
+          if (normalizedStatus.includes('active')) {
+            style = "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800";
+          } else if (normalizedStatus.includes('leave')) {
+            style = "bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-400 dark:border-yellow-800";
+          } else if (normalizedStatus.includes('terminated') || normalizedStatus.includes('resigned')) {
+            style = "bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800";
+          }
+          return <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${style} capitalize`}>{status || "Unknown"}</span>;
+        };
+
+        const UserAvatar = ({ name, photo, size = "md" }) => {
+            const sizeClasses = { sm: "w-10 h-10 text-sm", md: "w-20 h-20 text-3xl", lg: "w-32 h-32 text-5xl", xl: "w-40 h-40 text-6xl" };
+            const containerClass = `rounded-full flex items-center justify-center font-bold border-2 border-white dark:border-slate-700 shadow-md overflow-hidden ${sizeClasses[size]} shrink-0`;
+            const getDirectImageUrl = (url) => { if (!url) return ""; if (url.startsWith('data:image')) return url; let cleanUrl = url.trim(); return cleanUrl; };
+
+            if (photo && photo.trim() !== "") {
+                return (
+                    <div className={`${containerClass} bg-slate-50 dark:bg-slate-800`}>
+                        <img src={getDirectImageUrl(photo)} alt={name} className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
+                        <div className="hidden w-full h-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 items-center justify-center">{name ? name.charAt(0) : '?'}</div>
+                    </div>
+                );
+            }
+            return <div className={`${containerClass} bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400`}>{name ? name.charAt(0) : '?'}</div>;
+        };
+
+        const ConfirmModal = ({ isOpen, onClose, onConfirm, message }) => {
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-slate-50 dark:bg-slate-800 rounded-xl shadow-2xl max-w-sm w-full p-6 border border-slate-200 dark:border-slate-700 transform scale-100 animate-in zoom-in-95 duration-200">
+                        <div className="flex flex-col items-center text-center gap-4">
+                            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-400">
+                                <Trash2 size={24} />
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Employee?</h3>
+                            <p className="text-sm text-slate-500 dark:text-slate-400">{message || "Are you sure you want to delete this record? This action cannot be undone."}</p>
+                            <div className="flex gap-3 w-full mt-2">
+                                <button onClick={onClose} className="flex-1 px-4 py-2 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg font-medium hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">Cancel</button>
+                                <button onClick={onConfirm} className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors shadow-sm">Delete</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- CUSTOM TICK COMPONENT FOR WRAPPING TEXT ---
+        const CustomXAxisTick = ({ x, y, payload }) => {
+            if (!payload || !payload.value) return null;
+            const text = payload.value.toString();
+            const words = text.split(' ');
+            const lines = [];
+            let currentLine = words[0];
+            for (let i = 1; i < words.length; i++) {
+                if ((currentLine + ' ' + words[i]).length < 15) {
+                    currentLine += ' ' + words[i];
+                } else {
+                    lines.push(currentLine);
+                    currentLine = words[i];
+                }
+            }
+            lines.push(currentLine);
+            return (
+                <g transform={`translate(${x},${y})`}>
+                    <text x={0} y={0} dy={25} textAnchor="middle" fill="#94a3b8" fontSize={12} fontWeight="bold">
+                        {lines.map((line, i) => (
+                            <tspan key={i} x={0} dy={i === 5 ? 0 : 12}>
+                                {line}
+                            </tspan>
+                        ))}
+                    </text>
+                </g>
+            );
+        };
+
+        // --- NEW CUSTOM TOOLTIP FOR ANALYTICS ---
+        const CustomTooltip = ({ active, payload, label }) => {
+            if (active && payload && payload.length) {
+                const data = payload[0].payload;
+                // Use tooltipItems if available (formatted strings), otherwise fall back to employees array (names)
+                const items = data.tooltipItems || data.employees || [];
+
+                return (
+                    <div className="bg-slate-800 border border-slate-700 p-3 rounded-lg shadow-xl text-xs max-w-xs z-50">
+                        <p className="font-bold text-white mb-2 border-b border-slate-600 pb-1">
+                            {data.name} <span className="text-slate-400 font-normal">({data.total})</span>
+                        </p>
+                        {items.length > 0 ? (
+                            <div className="max-h-64 overflow-y-auto scrollbar-thin pr-1">
+                                <ul className="space-y-1">
+                                    {items.map((item, idx) => (
+                                        <li key={idx} className="text-slate-300 flex items-start gap-2">
+                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full shrink-0 mt-1.5"></span>
+                                            <span>{item}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        ) : (
+                            <span className="text-slate-500">No data</span>
+                        )}
+                    </div>
+                );
+            }
+            return null;
+        };
+
+        // --- ATTRITION DASHBOARD COMPONENT ---
+        const AttritionDashboard = ({ data }) => {
+            const [filter, setFilter] = useState('All');
+            const [selectedYear, setSelectedYear] = useState('All');
+            const [selectedMonth, setSelectedMonth] = useState('All');
+
+            const uniqueYears = useMemo(() => {
+                const years = new Set();
+                data.forEach(e => {
+                    const status = (e.status || "").toLowerCase().trim();
+                    if (status.includes("resigned") || status.includes("terminated")) {
+                         if (e.end_date) {
+                            const d = new Date(e.end_date);
+                            if (!isNaN(d.getTime())) years.add(d.getFullYear());
+                        }
+                    }
+                });
+                return Array.from(years).sort((a, b) => b - a);
+            }, [data]);
+
+            const inactiveData = useMemo(() => {
+                if (!data) return [];
+                return data.filter(e => {
+                    const status = (e.status || "").toLowerCase().trim();
+                    const isAttrition = status.includes("resigned") || status.includes("terminated");
+                    
+                    if (!isAttrition) return false;
+
+                    // Filter by Source
+                    if (filter !== 'All' && (e.source || '') !== filter) return false;
+
+                    if (selectedYear !== 'All') {
+                        if (!e.end_date) return false;
+                        const d = new Date(e.end_date);
+                        if (isNaN(d.getTime()) || d.getFullYear() !== parseInt(selectedYear)) return false;
+                    }
+
+                    if (selectedMonth !== 'All') {
+                        if (!e.end_date) return false;
+                        const d = new Date(e.end_date);
+                        if (isNaN(d.getTime()) || d.getMonth() !== parseInt(selectedMonth)) return false;
+                    }
+
+                    return true;
+                });
+            }, [data, selectedYear, selectedMonth, filter]);
+
+            // Calculate Group Stats (Source, Title, or Dept)
+            const groupStats = useMemo(() => {
+                const stats = {};
+                inactiveData.forEach(e => {
+                    let key = 'Unassigned';
+                    if (filter === 'All') {
+                        key = e.source || 'Unassigned';
+                    } else if (filter === 'MX') {
+                        key = e.title || 'Unassigned';
+                    } else if (filter === 'Tempo Tech') {
+                        key = e.department || 'Unassigned';
+                    }
+
+                    if (!stats[key]) stats[key] = [];
+                    stats[key].push(e.name);
+                });
+                return Object.entries(stats)
+                    .map(([name, employees]) => ({
+                        name,
+                        total: employees.length,
+                        employees: employees.sort()
+                    }))
+                    .sort((a,b) => b.total - a.total);
+            }, [inactiveData, filter]);
+
+            // Calculate Month-Over-Month Stats
+            const momStats = useMemo(() => {
+                const stats = {};
+                inactiveData.forEach(e => {
+                    if (!e.end_date) return;
+                    const date = new Date(e.end_date);
+                    if (isNaN(date.getTime())) return;
+                    
+                    // Key for sorting: YYYY-MM
+                    const sortKey = date.toISOString().slice(0, 7); 
+                    // Display Name: MMM YYYY
+                    const displayName = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+
+                    if (!stats[sortKey]) {
+                        stats[sortKey] = {
+                            name: displayName,
+                            sortKey: sortKey,
+                            total: 0,
+                            employees: []
+                        };
+                    }
+                    stats[sortKey].total++;
+                    stats[sortKey].employees.push(e.name);
+                });
+
+                return Object.values(stats).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+            }, [inactiveData]);
+
+            const processStats = (key) => {
+                const stats = {};
+                inactiveData.forEach(e => {
+                    let val = e[key];
+                    if (!val || val.trim() === "") val = "Unspecified";
+                    if (!stats[val]) stats[val] = [];
+                    stats[val].push(e.name);
+                });
+                return Object.entries(stats).map(([name, employees]) => ({
+                    name,
+                    total: employees.length,
+                    employees: employees.sort()
+                })).sort((a,b) => b.total - a.total);
+            };
+
+            const statusStats = useMemo(() => processStats('status'), [inactiveData]);
+            const rehireStats = useMemo(() => processStats('rehire_status'), [inactiveData]);
+            const reasonStats = useMemo(() => processStats('reason'), [inactiveData]);
+
+            const COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#3b82f6', '#10b981', '#ec4899', '#6366f1'];
+            const minMomChartWidth = Math.max(600, momStats.length * 60);
+            const minGroupChartWidth = Math.max(600, groupStats.length * 60);
+            
+            const months = [
+                { value: 0, label: 'January' }, { value: 1, label: 'February' }, { value: 2, label: 'March' },
+                { value: 3, label: 'April' }, { value: 4, label: 'May' }, { value: 5, label: 'June' },
+                { value: 6, label: 'July' }, { value: 7, label: 'August' }, { value: 8, label: 'September' },
+                { value: 9, label: 'October' }, { value: 10, label: 'November' }, { value: 11, label: 'December' }
+            ];
+
+            let viewLabel = "Source";
+            if (filter === 'MX') viewLabel = "Title (MX)";
+            if (filter === 'Tempo Tech') viewLabel = "Department (Tempo Tech)";
+
+            if (inactiveData.length === 0 && selectedYear === 'All' && selectedMonth === 'All' && filter === 'All') return (
+                <div className="flex flex-col items-center justify-center h-64 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                    <UserX size={45} className="text-slate-300 dark:text-slate-600 mb-4"/>
+                    <p className="text-slate-500 dark:text-slate-400 font-medium">No attrition records found</p>
+                </div>
+            );
+
+            return (
+                <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+                    {/* Controls Container */}
+                    <div className="flex flex-col items-center gap-4 mb-2 bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        
+                        <div className="flex flex-wrap items-center justify-center gap-4 w-full">
+                            {/* Grouping Toggle */}
+                            <div className="bg-slate-200 dark:bg-slate-700 p-1 rounded-lg inline-flex shadow-inner">
+                                {['All', 'MX', 'Tempo Tech'].map(opt => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => setFilter(opt)} 
+                                        className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${filter === opt ? 'bg-white dark:bg-slate-600 text-red-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
+
+                            {/* Year Filter */}
+                            <select 
+                                value={selectedYear} 
+                                onChange={(e) => setSelectedYear(e.target.value)}
+                                className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none text-slate-900 dark:text-slate-100 font-medium cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                            >
+                                <option value="All">All Years</option>
+                                {uniqueYears.map(y => <option key={y} value={y}>{y}</option>)}
+                            </select>
+
+                            {/* Month Filter */}
+                            <select 
+                                value={selectedMonth} 
+                                onChange={(e) => setSelectedMonth(e.target.value)}
+                                className="px-3 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none text-slate-900 dark:text-slate-100 font-medium cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+                            >
+                                <option value="All">All Months</option>
+                                {months.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    {/* Summary Metrics (Total, Resigned, Terminated) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Total Attrition</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">{inactiveData.length}</p>
+                            </div>
+                            <div className="p-3 bg-red-100 dark:bg-red-900/30 text-red-600 rounded-lg"><UserX size={24}/></div>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Resigned</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">
+                                    {inactiveData.filter(e => (e.status||'').toLowerCase().includes('resigned')).length}
+                                </p>
+                            </div>
+                            <div className="p-3 bg-orange-100 dark:bg-orange-900/30 text-orange-600 rounded-lg"><Footprints size={24}/></div>
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex items-center justify-between">
+                            <div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase">Terminated</p>
+                                <p className="text-2xl font-bold text-slate-800 dark:text-white">
+                                    {inactiveData.filter(e => (e.status||'').toLowerCase().includes('terminated')).length}
+                                </p>
+                            </div>
+                            <div className="p-3 bg-slate-100 dark:bg-slate-700 text-slate-600 rounded-lg"><WifiOff size={24}/></div>
+                        </div>
+                    </div>
+
+                    {/* Group & MOM Charts */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                <BarChart3 size={20} className="text-red-500" /> Attrition by {viewLabel}
+                            </h3>
+                            <div className="overflow-x-auto w-full pb-1">
+                                <div style={{ width: `${minGroupChartWidth}px`, height: '300px' }}>
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <BarChart data={groupStats} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                            <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tick={<CustomXAxisTick />} interval={0} />
+                                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                            <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                                            <Bar dataKey="total" fill="#ef4444" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                                                <LabelList dataKey="total" position="center" style={{ fill: '#ffffff', fontSize: '12px', fontWeight: 'bold' }} />
+                                            </Bar>
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-sm overflow-hidden">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                <Activity size={20} className="text-orange-500" /> Attrition Trend (MoM)
+                            </h3>
+                            {momStats.length > 0 ? (
+                                <div className="overflow-x-auto w-full pb-1">
+                                    <div style={{ width: `${minMomChartWidth}px`, height: '300px' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={momStats} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                                                <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
+                                                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                                                <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                                                <Bar dataKey="total" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={50}>
+                                                    <LabelList dataKey="total" position="center" style={{ fill: '#ffffff', fontSize: '12px', fontWeight: 'bold' }} />
+                                                </Bar>
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="h-[300px] flex items-center justify-center text-slate-400 italic">
+                                    No records matching criteria to plot trend.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Status Chart */}
+                        <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                                <PieChart size={20} className="text-blue-500" /> Attrition by Status
+                            </h3>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <RePieChart>
+                                        <Pie 
+                                            data={statusStats} 
+                                            dataKey="total" 
+                                            nameKey="name" 
+                                            cx="50%" 
+                                            cy="50%" 
+                                            outerRadius={100} 
+                                            label={({name, value, percent}) => `${name}: (${(percent * 100).toFixed(0)}%), ${value}`}
+                                        >
+                                            {statusStats.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                                        </Pie>
+                                        <Tooltip content={<CustomTooltip />} />
+                                        <Legend />
+                                    </RePieChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+
+                        {/* Rehire Status Chart */}
+                        <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                                <BarChart3 size={20} className="text-purple-500" /> Rehire Eligibility
+                            </h3>
+                            <div className="h-[300px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <BarChart data={rehireStats} layout="vertical" margin={{ top: 5, right: 30, left: 40, bottom: 5 }}>
+                                        <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.2} />
+                                        <XAxis type="number" hide />
+                                        <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 11, fill: '#94a3b8'}} />
+                                        <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                                        <Bar dataKey="total" fill="#8b5cf6" radius={[0, 4, 4, 0]} barSize={20}>
+                                            <LabelList dataKey="total" position="center" style={{ fill: '#ffffff', fontSize: '12px' }} />
+                                        </Bar>
+                                    </BarChart>
+                                </ResponsiveContainer>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Reasons Chart */}
+                    <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                            <List size={20} className="text-orange-500" /> Reasons for Leaving
+                        </h3>
+                        <div className="h-[400px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={reasonStats} layout="vertical" margin={{ top: 5, right: 30, left: 100, bottom: 5 }}>
+                                    <CartesianGrid strokeDasharray="3 3" horizontal={false} opacity={0.2} />
+                                    <XAxis type="number" hide />
+                                    <YAxis dataKey="name" type="category" width={180} tick={{fontSize: 11, fill: '#94a3b8'}} />
+                                    <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
+                                    <Bar dataKey="total" fill="#f59e0b" radius={[0, 4, 4, 0]} barSize={20}>
+                                        <LabelList dataKey="total" position="center" style={{ fill: '#ffffff', fontSize: '12px' }} />
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const AnalyticsDashboard = ({ data }) => {
+          const [filter, setFilter] = useState('All');
+          // Independent filter state for the Supervisor section (Array for multi-select)
+          const [selectedSupervisors, setSelectedSupervisors] = useState([]);
+
+          // Reset specific supervisor filter when main filter changes
+          useEffect(() => {
+              setSelectedSupervisors([]);
+          }, [filter]);
+
+          const activeData = useMemo(() => {
+              if (!data) return [];
+              return data.filter(e => (e.status || "").toLowerCase().trim().includes("active"));
+          }, [data]);
+
+          // Filter active data based on the main Source filter (All, MX, Tempo Tech)
+          const filteredBySourceData = useMemo(() => {
+              if (filter === 'All') return activeData;
+              return activeData.filter(e => (e.source || '') === filter);
+          }, [activeData, filter]);
+
+          // Get list of unique active supervisors based on the FILTERED data
+          const uniqueSupervisors = useMemo(() => {
+              const activeNames = new Set(activeData.map(e => e.name)); // Check against ALL active employees for validity
+              const sups = new Set(filteredBySourceData.map(e => e.team_lead).filter(s => s && s !== 'Unassigned'));
+              
+              // Only include supervisors who are themselves active employees
+              const validSups = Array.from(sups).filter(s => activeNames.has(s));
+              return validSups.sort();
+          }, [filteredBySourceData, activeData]);
+
+          const handleSupervisorToggle = (name) => {
+              if (name === 'All') { setSelectedSupervisors([]); return; }
+              if (selectedSupervisors.includes(name)) {
+                  setSelectedSupervisors(prev => prev.filter(s => s !== name));
+              } else {
+                  setSelectedSupervisors(prev => [...prev, name]);
+              }
+          };
+
+          if (activeData.length === 0) return (
+            <div className="flex flex-col items-center justify-center h-64 bg-slate-50 dark:bg-slate-800 rounded-xl border-2 border-slate-200 dark:border-slate-700">
+                <BarChart3 size={45} className="text-slate-300 dark:text-slate-600 mb-4"/>
+                <p className="text-slate-500 dark:text-slate-400 font-medium">No active employees found for analytics</p>
+            </div>
+          );
+          
+          const chartData = useMemo(() => {
+             const stats = {};
+             
+             // Use the filtered source data directly
+             const filteredEmployees = filteredBySourceData;
+
+             // 2. Group based on specific logic (All->Source, MX->Title, Tempo->Dept)
+             filteredEmployees.forEach(e => {
+                 let key = 'Unassigned';
+                 
+                 if (filter === 'All') {
+                     key = e.source || 'Unassigned';
+                 } else if (filter === 'MX') {
+                     key = e.title || 'Unassigned';
+                 } else if (filter === 'Tempo Tech') {
+                     key = e.department || 'Unassigned';
+                 }
+                 
+                 if (!stats[key]) {
+                     stats[key] = [];
+                 }
+                 stats[key].push(e); // Store full object for flexible processing
+             });
+
+             return Object.entries(stats)
+                 .map(([name, employees]) => {
+                     let tooltipItems = [];
+
+                     if (filter === 'All') {
+                         // Aggregation logic for "All" view: Show counts of Titles or Departments
+                         const counts = {};
+                         employees.forEach(e => {
+                             let subKey = 'Unassigned';
+                             if (name === 'MX') {
+                                 subKey = e.title || 'Unassigned';
+                             } else if (name === 'Tempo Tech') {
+                                 subKey = e.department || 'Unassigned';
+                             } else {
+                                 subKey = e.title || 'Unassigned';
+                             }
+                             counts[subKey] = (counts[subKey] || 0) + 1;
+                         });
+
+                         // Format as "Title (Count)" and sort by count descending
+                         tooltipItems = Object.entries(counts)
+                             .sort((a, b) => b[1] - a[1])
+                             .map(([k, v]) => `${k} (${v})`);
+                     } else {
+                         // Restore showing names for specific views (MX/Tempo Tech)
+                         tooltipItems = employees.map(e => e.name).sort();
+                     }
+
+                     return {
+                         name, 
+                         total: employees.length,
+                         tooltipItems // Pass the processed tooltip strings
+                     };
+                 })
+                 .sort((a,b) => b.total - a.total);
+          }, [filteredBySourceData, filter]);
+
+          // --- New Logic for Supervisor Breakdown ---
+          const supervisorData = useMemo(() => {
+             // Create a set of active employee names for validation to ensure supervisor is active
+             const activeNames = new Set(activeData.map(e => e.name));
+
+             const stats = {};
+             // Use filteredBySourceData so the cards match the main filter selection
+             filteredBySourceData.forEach(e => {
+                 const sup = e.team_lead || 'Unassigned';
+                 if (!stats[sup]) stats[sup] = [];
+                 stats[sup].push(e);
+             });
+
+             return Object.entries(stats)
+                 .filter(([name]) => activeNames.has(name)) // Only show if supervisor is active
+                 .filter(([name]) => selectedSupervisors.length === 0 || selectedSupervisors.includes(name)) // Filter by selected supervisors
+                 .map(([name, employees]) => ({
+                     name,
+                     count: employees.length,
+                     employees: employees.sort((a, b) => a.name.localeCompare(b.name))
+                 }))
+                 .sort((a, b) => b.count - a.count);
+          }, [filteredBySourceData, activeData, selectedSupervisors]);
+          
+          const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+          
+          // Logic to center chart for small datasets (like 'All' view which usually has ~2 items)
+          const isCompactView = filter === 'All' || chartData.length <= 4;
+          const containerClass = isCompactView 
+            ? "w-full pb-1 flex justify-center" 
+            : "overflow-x-auto w-full pb-1";
+            
+          const wrapperStyle = isCompactView 
+            ? { width: '100%', maxWidth: '800px', height: '500px' }
+            : { width: `${Math.max(1000, chartData.length * 150)}px`, height: '500px' };
+          
+          // Calculate total based on current chart data (respecting filtering)
+          const displayedTotal = chartData.reduce((acc, item) => acc + item.total, 0);
+
+          let viewLabel = "Source";
+          if (filter === 'MX') viewLabel = "Title (MX)";
+          if (filter === 'Tempo Tech') viewLabel = "Department (Tempo Tech)";
+
+          return (
+            <div className="space-y-8 animate-in fade-in zoom-in-95 duration-300 flex flex-col gap-6 w-full">
+                {/* Analytics Filters (Main Charts) */}
+                <div className="flex justify-center">
+                    <div className="bg-slate-200 dark:bg-slate-700 p-1 rounded-lg inline-flex shadow-inner">
+                        {['All', 'MX', 'Tempo Tech'].map(opt => (
+                            <button 
+                                key={opt}
+                                onClick={() => setFilter(opt)} 
+                                className={`px-4 py-2 text-sm font-bold rounded-md transition-all ${filter === opt ? 'bg-white dark:bg-slate-600 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                            >
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-sm w-full overflow-hidden">
+                  <div className="flex items-center justify-between mb-6">
+                      <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                        <BarChart3 size={20} className="text-blue-600 dark:text-blue-400" /> Active Headcount by {viewLabel}
+                      </h3>
+                      <span className="text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full">
+                        Total Active: {displayedTotal}
+                      </span>
+                  </div>
+                  <div className={containerClass}>
+                      <div style={wrapperStyle}>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={chartData} margin={{ top: 20, right: 30, left: 20, bottom: 10 }} barGap={10}>
+                            <CartesianGrid strokeDasharray="3 3" opacity={0} />
+                            <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} interval={0} tick={<CustomXAxisTick />} height={100} />
+                            <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                            <Tooltip content={<CustomTooltip />} cursor={{ fill: 'transparent' }} />
+                            <Bar dataKey="total" fill="#3b82f6" maxBarSize={60} radius={[4, 4, 0, 0]}>
+                               <LabelList dataKey="total" position="center" style={{ fill: '#ffffff', fontSize: '15px', fontWeight: 'bold' }} />
+                           </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                  </div>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800 p-6 rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-sm w-full">
+                    <div className="flex items-center justify-between mb-6">
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                            <PieChart size={20} className="text-black-600 dark:text-purple-400" /> Active Distribution by {viewLabel}
+                        </h3>
+                        <span className="text-xs font-semibold bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-2 py-1 rounded-full">
+                            Total Active: {displayedTotal}
+                        </span>
+                    </div>
+                    <div className="h-[600px] w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <RePieChart>
+                                <Pie 
+                                    data={chartData} 
+                                    dataKey="total" 
+                                    nameKey="name" 
+                                    cx="50%" 
+                                    cy="50%" 
+                                    labelLine={false} 
+                                    label={({ name, value, percent }) => percent > 0.05 ? `${name}: (${(percent * 100).toFixed(0)}%), ${value}` : ''} 
+                                    outerRadius={200}
+                                >
+                                    {chartData.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                                </Pie>
+                                <Tooltip content={<CustomTooltip />} />
+                                <Legend />
+                            </RePieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* Supervisor Breakdown Section - Only shown when NOT 'All' */}
+                {filter !== 'All' && (
+                    <div className="flex flex-col gap-4 w-full">
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                <UserCheck size={24} className="text-blue-600 dark:text-blue-400" /> 
+                                Team Breakdown by Supervisor
+                            </h3>
+                            
+                            {/* Independent Supervisor Section Filter */}
+                            <div className="bg-slate-200 dark:bg-slate-700 p-1 rounded-lg flex overflow-x-auto max-w-full scrollbar-thin items-center">
+                                <button 
+                                    onClick={() => handleSupervisorToggle('All')} 
+                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all whitespace-nowrap ${selectedSupervisors.length === 0 ? 'bg-white dark:bg-slate-600 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                                >
+                                    All
+                                </button>
+                                {uniqueSupervisors.map(opt => (
+                                    <button 
+                                        key={opt}
+                                        onClick={() => handleSupervisorToggle(opt)} 
+                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all whitespace-nowrap ${selectedSupervisors.includes(opt) ? 'bg-white dark:bg-slate-600 text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'}`}
+                                    >
+                                        {opt}
+                                    </button>
+                                ))}
+                                {selectedSupervisors.length > 0 && (
+                                    <button 
+                                        onClick={() => setSelectedSupervisors([])} 
+                                        className="ml-2 px-2 py-1 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors whitespace-nowrap"
+                                    >
+                                        Clear
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {supervisorData.map((sup) => (
+                                <div key={sup.name} className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden max-h-[400px]">
+                                    <div className="p-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 flex justify-between items-center sticky top-0 z-10">
+                                        <div className="font-bold text-slate-700 dark:text-slate-200 truncate pr-2" title={sup.name}>{sup.name}</div>
+                                        <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold px-2 py-1 rounded-full shrink-0">{sup.count}</span>
+                                    </div>
+                                    <div className="overflow-y-auto p-2 scrollbar-thin">
+                                        <ul className="space-y-1">
+                                            {sup.employees.map(emp => (
+                                                <li key={emp.id} className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 p-2 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0"></div>
+                                                    <span className="truncate flex-1 font-medium" title={emp.name}>{emp.name}</span>
+                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-600 shrink-0" title={emp.title}>{emp.title}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+            </div>
+          );
+        };
+
+        const EmployeeModal = ({ employee, mode = 'view', onClose, onSave }) => {
+          const [formData, setFormData] = useState({ ...employee });
+          const isEdit = mode === 'edit';
+          
+          const isActive = (isEdit ? formData.status : employee.status)?.toLowerCase().includes('active');
+
+          const handleChange = (e) => { 
+              const { name, value, type } = e.target; 
+              let newValue = value;
+
+              // Enforce MM/DD/YYYY format for date inputs (Full Year)
+              if (type === 'date' && value) {
+                  // value from input type="date" is YYYY-MM-DD
+                  const [year, month, day] = value.split('-'); 
+                  // convert to MM/DD/YYYY
+                  newValue = `${month}/${day}/${year}`;
+              }
+
+              setFormData(prev => ({ ...prev, [name]: newValue })); 
+          };
+
+          const handleImageUpload = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onloadend = () => { setFormData(prev => ({ ...prev, photo: reader.result })); };
+                reader.readAsDataURL(file);
+            }
+          };
+
+          const handleSubmit = (e) => {
+            e.preventDefault();
+            if (formData.name === "New Employee" && !formData.tempo_email) { 
+                alert("Please enter a name and Tempo Email for the new employee."); 
+                return; 
+            }
+            onSave(employee.id, formData);
+          };
+
+          useEffect(() => {
+            const handleKeyDown = (e) => { if (e.key === "Escape") { onClose(); } };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => { window.removeEventListener('keydown', handleKeyDown); };
+          }, [onClose]);
+
+          const isNewRecord = employee.id.toString().startsWith('NEW-');
+          const modalTitle = isEdit ? (isNewRecord ? 'Create New Employee' : 'Edit Employee') : 'Employee Details';
+          const saveButtonText = isNewRecord ? 'Create Employee' : 'Save Changes';
+   
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto">
+              <div className="absolute inset-0" onClick={onClose}></div>
+              <div className="relative bg-slate-50 dark:bg-slate-800 rounded-xl shadow-3xl w-full max-w-5xl border border-slate-200 dark:border-slate-700 flex flex-col my-auto max-h-[90vh]">
+                <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50 rounded-t-xl">
+                   <div className="flex items-center gap-6">
+                      {isEdit ? (
+                          <div className="relative group cursor-pointer shrink-0" onClick={() => document.getElementById('modal-file-input').click()}>
+                            <UserAvatar name={formData.name} photo={formData.photo} size="lg" />
+                            <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><Upload size={32} className="text-white" /></div>
+                            <input id="modal-file-input" type="file" className="hidden" onChange={handleImageUpload} accept="image/*" />
+                          </div>
+                      ) : <UserAvatar name={formData.name} photo={formData.photo} size="lg" />}
+                      <div>
+                          {isEdit ? ( 
+                              <div className="w-80"><UnifiedField label="Full Name" name="name" value={formData.name} onChange={handleChange} isEdit={true} /></div> 
+                          ) : ( 
+                              <div className="flex items-baseline gap-3 mb-2">
+                                  <h2 className="text-3xl font-bold text-slate-900 dark:text-white leading-tight">{formData.name}</h2>
+                                  {formData.joining_date && (
+                                      <span className="text-lg font-medium text-slate-500 dark:text-slate-400">
+                                          ({calculateTenure(formData.joining_date)})
+                                      </span>
+                                  )}
+                              </div>
+                          )}
+                          {!isEdit && ( <div className="flex items-center gap-3 mt-1"><StatusBadge status={formData.status} /><span className="text-sm text-slate-500 dark:text-slate-400 font-mono bg-white dark:bg-slate-900 px-2 py-1 rounded border border-slate-200 dark:border-slate-700">ID: {formData.id}</span></div> )}
+                          <div className="text-sm text-blue-500 font-semibold mt-1 uppercase tracking-wide">{modalTitle}</div>
+                      </div>
+                   </div>
+                   <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors text-slate-400"><X size={24} /></button>
+                </div>
+                
+                <form onSubmit={handleSubmit} className="p-8 overflow-y-auto flex-1">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                    <div className="space-y-5">
+                        <h3 className="text-xs font-bold text-blue-600 dark:text-blue-400 uppercase tracking-widest border-b border-blue-100 dark:border-blue-900/30 pb-2 mb-3">Employment</h3>
+                        <UnifiedField label="Employee ID" name="id" value={formData.id} onChange={handleChange} isEdit={isEdit} /> 
+                        <UnifiedField label="HR ID" name="hr_id" value={formData.hr_id} onChange={handleChange} isEdit={isEdit} />
+                        <UnifiedField label="Nationality" name="nationality" value={formData.nationality} onChange={handleChange} isEdit={isEdit} />
+                        {isEdit && <UnifiedField label="Photo URL" name="photo" value={formData.photo} onChange={handleChange} isEdit={true} />}
+                        <UnifiedField label="Department" name="department" value={formData.department} onChange={handleChange} isEdit={isEdit} icon={Building} type={isEdit ? "select" : "text"} options={DEPARTMENTS} />
+                        <UnifiedField label="Title" name="title" value={formData.title} onChange={handleChange} isEdit={isEdit} icon={Briefcase} type={isEdit ? "select" : "text"} options={TITLE_HIERARCHY} />
+                        <UnifiedField label="Supervisor" name="team_lead" value={formData.team_lead} onChange={handleChange} isEdit={isEdit} icon={UserCheck} />
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <UnifiedField label="Work Type" name="work_type" value={formData.work_type} onChange={handleChange} isEdit={isEdit} icon={Briefcase} />
+                            <UnifiedField label="Work Location" name="work_location" value={formData.work_location} onChange={handleChange} isEdit={isEdit} icon={Home} type={isEdit ? "select" : "text"} options={["Office", "Home"]} />
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <UnifiedField label="Third Party" name="third_party" value={formData.third_party} onChange={handleChange} isEdit={isEdit} icon={Users} type={isEdit ? "select" : "text"} options={["Profolio", "WORX"]} />
+                            <UnifiedField label="Source" name="source" value={formData.source} onChange={handleChange} isEdit={isEdit} icon={Building} type={isEdit ? "select" : "text"} options={["Tempo Tech", "MX"]} />
+                        </div>
+
+                        {isEdit && (<UnifiedField label="Channel (LOB)" name="channel" value={formData.channel} onChange={handleChange} isEdit={true} icon={Building} type="select" options={["Site Director", "HR Manager", "Training & Development Manager", "Operation Manager", "Workforce Manager", 
+          "Team Lead & Change Integration Manager", "QA Lead", "Team Lead", 
+          "Workforce Analyst", "QA", "T2/Mentor", "T2/Cancellation", "T2/Tech", "Social Media", "MX T1"]} />)}
+
+                        <UnifiedField label="Headset SN" name="headset_sn" value={formData.headset_sn} onChange={handleChange} isEdit={isEdit} icon={Hash} />
+                    </div>
+                    <div className="space-y-5">
+                        <h3 className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-widest border-b border-indigo-100 dark:border-indigo-900/30 pb-2 mb-3">Timeline & Contact</h3>
+                        <div className="grid grid-cols-2 gap-4">
+                           <UnifiedField label="Joined" name="joining_date" type="date" value={normalizeDate(formData.joining_date)} onChange={handleChange} isEdit={isEdit} icon={Calendar} />
+                           {(!isActive || isEdit) ? <UnifiedField label="End Date" name="end_date" type="date" value={normalizeDate(formData.end_date)} onChange={handleChange} isEdit={isEdit} icon={Calendar} /> : <div/>}
+                        </div>
+                        
+                        {!isEdit && (
+                            <ProfileField label="Tenure" value={calculateTenure(formData.joining_date)} icon={Clock} />
+                        )}
+
+                        <div className="grid grid-cols-2 gap-4 mt-4"><UnifiedField label="Wave" name="wave" value={formData.wave} onChange={handleChange} isEdit={isEdit} icon={Activity} /><UnifiedField label="Born" name="dob" type="date" value={normalizeDate(formData.dob)} onChange={handleChange} isEdit={isEdit} icon={Calendar} /></div>
+                        
+                        <div className="pt-2"></div>
+                        <UnifiedField label="Tempo Email" name="tempo_email" type="email" value={formData.tempo_email} onChange={handleChange} isEdit={isEdit} icon={Mail} />
+                        <UnifiedField label="Personal Email" name="personal_email" type="email" value={formData.personal_email} onChange={handleChange} isEdit={isEdit} icon={Mail} />
+                        {isEdit && (<UnifiedField label="Employment Status" name="status" type="select" options={["Active", "Inactive", "Terminated", "Resigned"]} value={formData.status} onChange={handleChange} isEdit={true} />)}
+                        {(!isActive || isEdit) && <UnifiedField label="Reason" name="reason" value={formData.reason} onChange={handleChange} isEdit={isEdit} />}
+                        {(!isActive || isEdit) && <UnifiedField label="Rehire Status" name="rehire_status" value={formData.rehire_status} onChange={handleChange} isEdit={isEdit} icon={Hash} />}
+                        
+                        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/50">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-3">Emergency Contact</h4>
+                            <div className="space-y-3">
+                                <UnifiedField label="Name" name="emergency_contact_name" value={formData.emergency_contact_name} onChange={handleChange} isEdit={isEdit} icon={User} />
+                                <UnifiedField label="Phone" name="emergency_contact_phone" value={formData.emergency_contact_phone} onChange={handleChange} isEdit={isEdit} icon={Phone} />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="space-y-5">
+                        <h3 className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase tracking-widest border-b border-purple-100 dark:border-purple-900/30 pb-2 mb-3">Personal & Info</h3>
+                        <div className="grid grid-cols-2 gap-4"><UnifiedField label="Mobile" name="mobile" value={formData.mobile} onChange={handleChange} isEdit={isEdit} icon={Phone} /><UnifiedField label="Phone" name="phone" value={formData.phone} onChange={handleChange} isEdit={isEdit} icon={Phone} /></div>
+                        <div className="grid grid-cols-2 gap-4"><UnifiedField label="Gender" name="gender" value={formData.gender} onChange={handleChange} isEdit={isEdit} icon={User} /><UnifiedField label="Religion" name="religion" value={formData.religion} onChange={handleChange} isEdit={isEdit} icon={Heart} /></div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <UnifiedField label="T-Shirt Size" name="tshirt_size" value={formData.tshirt_size} onChange={handleChange} isEdit={isEdit} icon={Shirt} />
+                            <UnifiedField label="Shoe Size" name="shoe_size" value={formData.shoe_size} onChange={handleChange} isEdit={isEdit} icon={Footprints} />
+                        </div>
+
+                        <UnifiedField label="Education" name="education" value={formData.education} onChange={handleChange} isEdit={isEdit} icon={GraduationCap} />
+                        <UnifiedField label="Address" name="address" value={formData.address} onChange={handleChange} isEdit={isEdit} icon={MapPin} />
+                        <UnifiedField label="Area" name="area" value={formData.area} onChange={handleChange} isEdit={isEdit} icon={MapPin} />
+                        {isEdit && <UnifiedField label="Route" name="route" value={formData.route} onChange={handleChange} isEdit={true} icon={Truck} />}
+                    </div>
+                  </div>
+                </form>
+                <div className="p-6 border-t border-slate-100 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-800/50 flex justify-end gap-3 rounded-b-xl">
+                  <button onClick={onClose} className="px-5 py-2.5 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">{isEdit ? 'Cancel' : 'Close'}</button>
+                  {isEdit && ( <button type="submit" onClick={handleSubmit} className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors flex items-center gap-2 shadow-md hover:shadow-lg transform active:scale-95 duration-150"><Save size={18} /> {saveButtonText}</button> )}
+                </div>
+              </div>
+            </div>
+          );
+        };
+
+        const EmployeeWidget = ({ employee, onClick, onEdit, onDelete }) => {
+          return (
+            <div onClick={onClick} className="group bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm hover:shadow-lg hover:border-blue-300 dark:hover:border-blue-700 cursor-pointer transition-all duration-200 flex flex-col overflow-hidden relative animate-in fade-in zoom-in-95 h-[32rem] transform hover:-translate-y-1">
+              <div className={`h-1.5 w-full shrink-0 ${employee.channel === 'MX T1' ? 'bg-indigo-500' : employee.channel === 'Engineering' ? 'bg-blue-500' : employee.channel === 'Sales' ? 'bg-green-500' : employee.channel === 'Finance' ? 'bg-purple-500' : 'bg-slate-400'}`} />
+              
+              <div className="p-4 flex-1 flex flex-col relative">
+                
+                <div className="flex flex-col w-full mb-2">
+                    <div className="flex justify-between items-start mb-3 w-full">
+                        <UserAvatar name={employee.name} photo={employee.photo} size="xl" />
+                        <div className="flex flex-col items-end gap-2">
+                            <StatusBadge status={employee.status} />
+                        </div>
+                    </div>
+                    
+                    <div className="mb-2 w-full flex flex-col gap-3">
+                        {/* 1. ID */}
+                        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 w-full">
+                            <span className="font-mono bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-600 truncate">ID: {employee.id}</span>
+                        </div>
+
+                        {/* 2. Name */}
+                        <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg truncate leading-tight w-full" title={employee.name}>{employee.name}</h3>
+                        
+                        {/* 3. Title */}
+                        <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1 truncate font-medium min-h-[1.5rem] w-full break-words whitespace-normal line-clamp-2 leading-tight">
+                            <Briefcase size={14} className="text-slate-400 dark:text-slate-500 shrink-0 mt-0.5" /> 
+                            <span>{employee.title || employee.position || '\u00A0'}</span>
+                        </p>
+
+                        {/* 4. Joining Date & Tenure */}
+                        <div className="flex flex-col gap-1 mt-1">
+                            <div className="flex items-center flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                <div className="flex items-center gap-1.5" title="Joining Date">
+                                    <Calendar size={12} className="shrink-0 opacity-70"/>
+                                    <span>{normalizeDate(employee.joining_date)}</span>
+                                </div>
+
+                                {employee.end_date && (
+                                    <>
+                                        <span className="text-slate-300 dark:text-slate-600">→</span>
+                                        <div className="flex items-center gap-1.5 text-red-600 dark:text-red-400 font-medium" title="End Date">
+                                             <span>{normalizeDate(employee.end_date)}</span>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+
+                            <div className="flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400" title="Tenure">
+                                <span>{calculateTenure(employee.joining_date)}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-auto w-full">
+                        {/* Spacer or additional content if needed */}
+                    </div>
+                </div>
+                
+                <div className="mt-auto space-y-3 w-full">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-700/50 p-2 rounded-lg border border-slate-100 dark:border-slate-600 flex items-center gap-2 w-full h-[3.5rem]">
+                        <UserCheck size={14} className="text-slate-400 dark:text-slate-500 flex-shrink-0"/> 
+                        <div className="flex flex-col min-w-0 w-full justify-center">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 leading-none mb-0.5">Supervisor</span>
+                            <span className="truncate font-semibold text-slate-700 dark:text-slate-200 min-h-[1rem] block">{employee.team_lead || '\u00A0'}</span>
+                        </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400 w-full">
+                       <div className="flex items-center gap-1.5 min-h-[1.25rem] overflow-hidden" title={employee.sub_channel ? `${employee.channel} - ${employee.sub_channel}` : employee.channel}>
+                           <div className="shrink-0">
+                                {employee.sub_channel === 'Phone' ? <Phone size={14}/> : employee.sub_channel === 'Email' ? <Mail size={14}/> : employee.sub_channel?.includes('Chat') ? <MessageCircle size={14}/> : <Building size={14}/>}
+                           </div>
+                           <span className="truncate font-medium block w-full">{employee.channel || '-'} {employee.sub_channel && <span className="text-slate-400">• {employee.sub_channel}</span>}</span>
+                       </div>
+                       <div className="flex items-center gap-1.5 min-h-[1.25rem] overflow-hidden"><MapPin size={14} className="shrink-0"/><span className="truncate font-medium block w-full">{employee.area || '\u00A0'}</span></div>
+                    </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-100 dark:bg-slate-900/30 p-3 flex justify-between items-center border-t border-slate-100 dark:border-slate-700 h-12 shrink-0">
+                <div className="flex gap-1">
+                    <button onClick={(e) => { e.stopPropagation(); onEdit(employee); }} className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:text-blue-600 dark:hover:text-blue-400 rounded-lg transition-colors text-slate-400" title="Edit"><Edit2 size={16} /></button>
+                    <button onClick={(e) => { e.stopPropagation(); onDelete(employee.id); }} className="p-2 hover:bg-white dark:hover:bg-slate-700 hover:text-red-600 dark:hover:text-red-400 rounded-lg transition-colors text-slate-400" title="Delete"><Trash2 size={16} /></button>
+                </div>
+                <div className="text-xs font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 group-hover:underline">Full Profile <ChevronRight size={14} /></div>
+              </div>
+            </div>
+          );
+        };
+
+        const EmployeeRow = ({ employee, onClick, onEdit, onDelete }) => {
+            // Helper to enforce consistent date format D-MMM-YYYY (Full Year)
+            const formatDisplayDate = (val) => {
+                // Now relying on global helper which outputs MM/DD/YYYY
+                return normalizeDate(val);
+            };
+
+            return (
+              <tr onClick={onClick} className="h-24 hover:bg-blue-50 dark:hover:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700 last:border-0 transition-colors cursor-pointer group">
+                <td className="w-[20%] px-6 py-4 align-middle text-left">
+                    <div className="flex items-center gap-3">
+                        <UserAvatar name={employee.name} photo={employee.photo} size="sm" />
+                        <div className="text-left min-w-0">
+                            <div className="font-medium text-slate-900 dark:text-slate-100 truncate">{employee.name}</div>
+                            <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                                <span>ID: {employee.id}</span>
+                                {employee.hr_id && <span className="text-blue-500">HR: {employee.hr_id}</span>}
+                            </div>
+                        </div>
+                    </div>
+                </td>
+                <td className="w-[10%] px-4 py-4 text-center align-middle text-sm text-slate-600 dark:text-slate-300 font-mono">
+                    {employee.hr_id || '-'}
+                </td>
+                <td className="w-[15%] px-6 py-4 text-sm text-slate-600 dark:text-slate-300 text-center align-middle">
+                    <div className="font-medium text-slate-700 dark:text-slate-200 min-h-[1.25rem] truncate">{employee.title || '\u00A0'}</div>
+                    <div className="text-xs text-slate-400 min-h-[1rem] truncate">{employee.position || '\u00A0'}</div>
+                </td>
+                <td className="w-[15%] px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center align-middle">
+                    <div className="flex items-center justify-center gap-2 min-h-[1.25rem]">
+                        <UserCheck size={14} className="text-slate-400 dark:text-slate-500 shrink-0"/>
+                        <span className="truncate max-w-[150px]">{employee.team_lead || '-'}</span>
+                    </div>
+                </td>
+                <td className="w-[15%] px-6 py-4 text-center align-middle">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-600 min-h-[1.25rem] max-w-full truncate">
+                        {employee.channel} {employee.sub_channel && `• ${employee.sub_channel}`}
+                    </span>
+                </td>
+                <td className="w-[10%] px-6 py-4 text-sm text-slate-600 dark:text-slate-400 text-center align-middle whitespace-nowrap">
+                    {formatDisplayDate(employee.joining_date)}
+                </td>
+                <td className="w-[10%] px-6 py-4 text-sm text-center align-middle whitespace-nowrap">
+                    {employee.end_date ? (
+                        <span className="text-red-600 dark:text-red-400 font-medium">{formatDisplayDate(employee.end_date)}</span>
+                    ) : (
+                        <span className="text-slate-300 dark:text-slate-600">-</span>
+                    )}
+                </td>
+                <td className="w-[15%] px-6 py-4 align-middle text-right">
+                    <div className="flex justify-end gap-2 items-center">
+                        <StatusBadge status={employee.status} />
+                        <button onClick={(e) => { e.stopPropagation(); onEdit(employee); }} className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-400 hover:text-blue-500 shrink-0"><Edit2 size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); onDelete(employee.id); }} className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-400 hover:text-red-500 shrink-0"><Trash2 size={14} /></button>
+                    </div>
+                </td>
+              </tr>
+            );
+        };
+
+        function HeadcountDashboard() {
+          const [data, setData] = useState(INITIAL_DATA);
+          const [activeTab, setActiveTab] = useState('employees'); 
+          const [viewMode, setViewMode] = useState('map'); 
+          const [searchTerm, setSearchTerm] = useState('');
+          const [statusFilter, setStatusFilter] = useState('Active'); 
+          const [selectedTitles, setSelectedTitles] = useState([]); 
+          const [loading, setLoading] = useState(false);
+          const [modalEmployee, setModalEmployee] = useState(null); 
+          const [modalMode, setModalMode] = useState('view'); 
+          const [deleteConfirm, setDeleteConfirm] = useState(null);
+          const [darkMode, setDarkMode] = useState(false);
+          const [user, setUser] = useState(null);
+          const [permissionError, setPermissionError] = useState(null);
+          
+          useEffect(() => {
+            const savedTheme = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = savedTheme === 'dark' || (!savedTheme && prefersDark);
+            setDarkMode(isDark);
+            document.documentElement.classList.toggle('dark', isDark);
+            document.documentElement.classList.toggle('light', !isDark);
+          }, []);
+
+          // --- AUTHENTICATION ---
+          useEffect(() => {
+            if (auth) {
+                // Try to use environment token if available, otherwise anonymous
+                const performAuth = async () => {
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (err) {
+                        console.warn("Primary Auth Failed (Custom Token):", err.message);
+                        // Fallback: If custom token fails (mismatch/expired), try anonymous
+                        try {
+                            await signInAnonymously(auth);
+                        } catch (anonErr) {
+                            console.error("Anonymous Auth Error:", anonErr);
+                            setPermissionError("Authentication failed: " + anonErr.message + ". Please enable Anonymous Auth in Firebase Console.");
+                            setLoading(false);
+                        }
+                    }
+                };
+                performAuth();
+
+                const unsubscribe = onAuthStateChanged(auth, (u) => {
+                    setUser(u);
+                    if (u) {
+                        console.log("Authenticated as", u.uid);
+                        setPermissionError(null); // Clear auth errors if success
+                    } else {
+                        // User logged out or init
+                    }
+                });
+                return () => unsubscribe();
+            } else {
+                setLoading(false);
+            }
+          }, []);
+
+          const toggleDarkMode = () => {
+              setDarkMode(prev => {
+                  const newMode = !prev;
+                  document.documentElement.classList.toggle('dark', newMode);
+                  document.documentElement.classList.toggle('light', !newMode);
+                  localStorage.setItem('theme', newMode ? 'dark' : 'light');
+                  return newMode;
+              });
+          };
+
+          // --- DATA FETCHING ---
+          useEffect(() => {
+            if (!db) {
+                setLoading(false);
+                return;
+            }
+            
+            // STRICT AUTH GUARD: Do not attempt query until user is authenticated
+            if (!user) {
+                // We are waiting for auth. Keep loading true, or show nothing.
+                // If auth fails, permissionError will be set by the auth block.
+                return; 
+            }
+
+            setLoading(true);
+            
+            // CHANGED: Reverted to root 'employees' collection as requested.
+            // NOTE: Ensure your Firestore Security Rules allow read/write to /employees
+            const employeesRef = collection(db, 'employees');
+
+            const unsubscribe = onSnapshot(employeesRef, (snapshot) => {
+                const fbData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(emp => !emp.deleted); 
+                if (fbData.length > 0) setData(fbData);
+                else setData(prev => prev.length > 0 ? prev : INITIAL_DATA);
+                setLoading(false);
+                setPermissionError(null); // Clear error on success
+            }, (error) => { 
+                console.error("Firebase Snapshot Error:", error); 
+                setLoading(false); 
+                if (error.code === 'permission-denied') {
+                    setPermissionError("Permission Denied: Missing permissions for 'employees' collection. Please check your Firestore Security Rules in the Firebase Console.");
+                } else {
+                    setPermissionError(`Connection Error: ${error.message}`);
+                }
+            });
+            return () => unsubscribe();
+          }, [user]); // Only re-run when user changes
+
+          const handleDelete = (id) => { setDeleteConfirm(id); };
+
+          const confirmDelete = async () => {
+            if (deleteConfirm) {
+                // Optimistic UI update
+                setData(prev => prev.filter(e => e.id !== deleteConfirm));
+                
+                if (db) {
+                    try {
+                        // CHANGED: Use root 'employees' collection
+                        await setDoc(doc(db, "employees", deleteConfirm), { deleted: true, status: "Terminated" }, { merge: true });
+                    } catch (err) {
+                        console.warn("Backend delete failed:", err.message);
+                        alert("Backend Error: " + err.message);
+                    }
+                }
+                setDeleteConfirm(null);
+            }
+          };
+
+          const handleUpdate = async (originalId, updatedEmployee) => {
+            if (!updatedEmployee && typeof originalId === 'object') {
+                updatedEmployee = originalId;
+                originalId = updatedEmployee.id;
+            }
+            const newId = updatedEmployee.id;
+            
+            // Optimistic UI update
+            if (originalId && originalId.toString().startsWith('NEW-')) {
+               setData(prev => [...prev, updatedEmployee]);
+            } else {
+               setData(prev => prev.map(e => e.id === originalId ? updatedEmployee : e));
+            }
+            
+            if (db) {
+                try {
+                    const isIdChanged = originalId && originalId !== newId;
+                    if (isIdChanged && originalId && !originalId.toString().startsWith('NEW-')) {
+                       // CHANGED: Use root 'employees' collection
+                       await deleteDoc(doc(db, "employees", originalId));
+                    }
+                    const { id, deleted, ...cleanData } = JSON.parse(JSON.stringify(updatedEmployee));
+                    cleanData.id = newId;
+                    // CHANGED: Use root 'employees' collection
+                    await setDoc(doc(db, "employees", newId), cleanData, { merge: true });
+                } catch (err) {
+                    console.warn("Backend save failed:", err.message);
+                    alert("Backend Error: " + err.message);
+                }
+            }
+            setModalEmployee(null); 
+          };
+          
+          const handleNewEmployee = () => {
+              const newId = `NEW-${Date.now()}`;
+              
+              // Changed: Default dates are now empty strings instead of today's date
+              // allowing the user to select the correct date without confusion.
+              
+              setModalEmployee({ 
+                  name: "New Employee", 
+                  id: newId, 
+                  status: "Active", 
+                  title: "MX T1", 
+                  channel: "MX T1", 
+                  team_lead: "", 
+                  joining_date: "", 
+                  dob: "",
+                  photo: "",
+                  department: "",
+                  work_type: "Full Time",
+                  third_party: "",
+                  source: "Tempo Tech",
+                  work_location: "Office",
+                  emergency_contact_name: "",
+                  emergency_contact_phone: "",
+                  anniversary: "",
+                  tshirt_size: "",
+                  shoe_size: ""
+              });
+              setModalMode('edit');
+          };
+          
+          const downloadCSV = () => {
+            const headers = [
+                "ID", "HR ID", "Name", "Title", "Channel", "Sub Channel", "Supervisor", "Joining Date", "End Date", "Status", 
+                "Tempo Email", "Personal Email", "Phone", "Nationality", "Wave", "DOB", "Religion", "Gender", 
+                "Education", "Area", "Address", "Headset SN", "Department", "Work Type", "Third Party", "Work Location",
+                "Emergency Contact Name", "Emergency Contact Phone", "Anniversary", "T-Shirt Size", "Shoe Size", "Source"
+            ];
+            
+            const csvRows = [
+                headers.join(','),
+                ...filteredData.map(row => {
+                    const values = [
+                        row.id,
+                        row.hr_id,
+                        row.name,
+                        row.title,
+                        row.channel,
+                        row.sub_channel,
+                        row.team_lead,
+                        row.joining_date,
+                        row.end_date,
+                        row.status,
+                        row.tempo_email,
+                        row.personal_email,
+                        row.phone,
+                        row.nationality,
+                        row.wave,
+                        row.dob,
+                        row.religion,
+                        row.gender,
+                        row.education,
+                        row.area,
+                        row.address || row.Address,
+                        row.headset_sn,
+                        row.department,
+                        row.work_type,
+                        row.third_party,
+                        row.work_location,
+                        row.emergency_contact_name,
+                        row.emergency_contact_phone,
+                        row.anniversary,
+                        row.tshirt_size,
+                        row.shoe_size,
+                        row.source
+                    ];
+                    return values.map(val => `"${(val || '').toString().replace(/"/g, '""')}"`).join(',');
+                })
+            ];
+
+            const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.setAttribute('hidden', '');
+            a.setAttribute('href', url);
+            a.setAttribute('download', `tempo_headcount_${new Date().toISOString().split('T')[0]}.csv`);
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          };
+
+          const openEditModal = (employee) => { setModalEmployee(employee); setModalMode('edit'); };
+          const openViewModal = (employee) => { setModalEmployee(employee); setModalMode('view'); };
+          const closeModal = () => { setModalEmployee(null); };
+
+          const getRoleRank = (title) => { if (!title) return 999; const t = title.toLowerCase(); const idx = TITLE_HIERARCHY.findIndex(r => t.includes(r.toLowerCase())); return idx !== -1 ? idx : 999; };
+
+          const uniqueTitles = useMemo(() => {
+              // Only active Titles
+              const activeData = data.filter(e => (e.status || "").toLowerCase().trim().includes("active"));
+              return [...new Set(activeData.map(e => e.title || 'Unassigned'))]
+                .filter(t => t.trim() !== '')
+                .sort();
+          }, [data]);
+
+          const filteredData = useMemo(() => {
+            return data.filter(e => {
+              const status = (e.status || "").toLowerCase().trim();
+              const searchLower = searchTerm.toLowerCase();
+              const matchesSearch = (e.name||'').toLowerCase().includes(searchLower) || (e.title||'').toLowerCase().includes(searchLower);
+              
+              const employeeTitle = e.title || 'Unassigned';
+              const matchesTitle = selectedTitles.length === 0 || selectedTitles.includes(employeeTitle);
+
+              if (searchTerm) return matchesSearch && matchesTitle;
+
+              let matchesStatus = false;
+              if (statusFilter === 'Active') matchesStatus = status.includes('active');
+              else matchesStatus = !status.includes('active');
+              
+              return matchesStatus && matchesTitle;
+            }).sort((a, b) => getRoleRank(a.title) - getRoleRank(b.title));
+          }, [data, searchTerm, statusFilter, selectedTitles]);
+
+          const groupedData = useMemo(() => {
+             // If searching or filtering by title, show all results in one flat grid
+             if (searchTerm || selectedTitles.length > 0) {
+                 return { 'Filtered Results': filteredData };
+             }
+             // Otherwise, group by Channel (LOB) hierarchy
+             return filteredData.reduce((acc, e) => { 
+                const k = e.channel || 'Unassigned'; (acc[k] = acc[k] || []).push(e); return acc; 
+             }, {});
+          }, [filteredData, searchTerm, selectedTitles]);
+
+          const stats = { total: data.length, visible: filteredData.length };
+
+          const handleTitleToggle = (title) => {
+              if (title === 'All') { setSelectedTitles([]); return; }
+              if (selectedTitles.includes(title)) setSelectedTitles(selectedTitles.filter(item => item !== title));
+              else setSelectedTitles([...selectedTitles, title]);
+          };
+
+          return (
+            <div className="min-h-screen bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans transition-colors duration-200 flex flex-col">
+                {modalEmployee && <EmployeeModal employee={modalEmployee} mode={modalMode} onClose={closeModal} onSave={handleUpdate} />}
+                
+                <ConfirmModal isOpen={!!deleteConfirm} onClose={() => setDeleteConfirm(null)} onConfirm={confirmDelete} message="Are you sure you want to permanently delete this employee record?" />
+
+                <header className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-30 shadow-sm">
+                  {/* --- Connection Error Banner --- */}
+                  {permissionError && (
+                      <div className="bg-red-500 text-white p-3 text-center text-sm font-bold flex items-center justify-center gap-2 animate-pulse">
+                          <AlertTriangle size={18} />
+                          {permissionError}
+                      </div>
+                  )}
+                  <div className="w-[95%] mx-auto px-4 h-16 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        {/* Updated Logo with Black/White mode switching - Removed border/shadow effects */}
+                        <img src="https://i.ibb.co/VcWmWNGT/nnn440rodh5cajnq6red.avif" alt="Tempo Logo" className="h-10 w-auto object-contain brightness-0 dark:invert" />
+                        <h1 className="text-lg font-bold text-slate-800 dark:text-white hidden sm:block">Tempo Dashboard</h1>
+                        
+                        <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg ml-4">
+                            <button onClick={() => setActiveTab('employees')} className={`px-4 lg:px-8 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'employees' ? 'bg-white dark:bg-slate-600 text-white-600 shadow-sm' : 'text-slate-500 hover:text-white-700 black:text-slate-400'}`}>Employees</button>
+                            <button onClick={() => setActiveTab('analytics')} className={`px-4 lg:px-8 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'analytics' ? 'bg-white dark:bg-slate-600 text-white-800 shadow-sm' : 'text-slate-500 hover:text-white-700 black:text-slate-400'}`}>Analytics</button>
+                            <button onClick={() => setActiveTab('attrition')} className={`px-4 lg:px-8 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'attrition' ? 'bg-white dark:bg-slate-600 text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 hover:text-white-700 black:text-slate-400'}`}>Attrition</button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                        {activeTab === 'employees' && (
+                            <>
+                                <div className="relative hidden md:block">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                    <input 
+                                        type="text" 
+                                        placeholder="Search..." 
+                                        className="pl-10 pr-10 py-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-sm border-transparent focus:bg-white dark:focus:bg-slate-600 border outline-none text-slate-800 dark:text-slate-100 w-full sm:w-64" 
+                                        value={searchTerm} 
+                                        onChange={(e) => setSearchTerm(e.target.value)} 
+                                    />
+                                    {searchTerm && (
+                                        <button 
+                                            onClick={() => setSearchTerm('')} 
+                                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-full hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    )}
+                                </div>
+                                <div className="flex bg-slate-100 dark:bg-slate-700 p-1 rounded-lg">
+                                    <button title="Grid View" onClick={() => setViewMode('map')} className={`p-2 rounded hover:scale-105 transition-transform ${viewMode === 'map' ? 'bg-white dark:bg-slate-600 text-blue-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}><LayoutGrid size={18}/></button>
+                                    <button title="List View" onClick={() => setViewMode('list')} className={`p-2 rounded hover:scale-105 transition-transform ${viewMode === 'list' ? 'bg-white dark:bg-slate-600 text-blue-400 shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}><List size={18}/></button>
+                                </div>
+                                <button onClick={() => setStatusFilter(prev => prev === 'Active' ? 'Inactive' : 'Active')} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm border hover:scale-105 transition-transform w-[100px] justify-center ${statusFilter === 'Active' ? 'bg-green-900/100 text-green-400 border-green-400' : 'bg-red-900/100 text-red-400 border-red-400'}`} title={statusFilter === 'Active' ? "Showing Active Employees" : "Showing Inactive Employees"}>{statusFilter === 'Active' ? <UserCheck size={18}/> : <UserX size={18}/>} <span className="hidden lg:inline">{statusFilter}</span></button>
+                                
+                                <button onClick={downloadCSV} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 font-medium rounded-lg transition-colors text-sm shadow-sm border border-slate-200 dark:border-slate-600 hover:scale-105 active:scale-95" title="Download CSV">
+                                    <Download size={18} /> <span className="hidden lg:inline">Export</span>
+                                </button>
+
+                                <button onClick={handleNewEmployee} className="hidden sm:flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors text-sm shadow-md active:scale-95 duration-150 hover:scale-105" title="Add New Employee"><PlusCircle size={18} /> <span className="hidden lg:inline">New</span></button>
+                            </>
+                        )}
+                        <div className="w-px h-6 bg-slate-200 dark:bg-slate-700 mx-5"></div>
+                        <button onClick={toggleDarkMode} className="p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors hover:scale-105 active:scale-95" title="Toggle Theme">{darkMode ? <Sun size={20} className="text-amber-400"/> : <Moon size={20}/>}</button>
+                    </div>
+                  </div>
+                </header>
+                
+                <main className="w-[95%] mx-auto px-4 py-6 flex-1">
+                   {loading && <div className="flex justify-center p-8"><div className="loader"></div></div>}
+
+                   {!loading && activeTab === 'analytics' && <AnalyticsDashboard data={data} />}
+                   {!loading && activeTab === 'attrition' && <AttritionDashboard data={data} />}
+
+                   {!loading && activeTab === 'employees' && (
+                       <>
+                           <div className="mb-6 flex flex-col xl:flex-row gap-6 items-start xl:items-center justify-between">
+                               <div className="bg-white dark:bg-slate-800 p-3 rounded-lg border border-slate-200 dark:border-slate-700 flex items-center gap-3 min-w-[150px] shrink-0 shadow-sm">
+                                   <div className={`p-2 rounded ${statusFilter === 'Active' ? 'bg-green-900/100 text-green-400' : 'bg-red-900/100 text-red-400'}`}><Eye size={20}/></div>
+                                   <div><p className="text-xs text-slate-500 dark:text-slate-400">{statusFilter} Employees</p><p className="text-xl font-bold text-slate-900 dark:text-white">{stats.visible}</p></div>
+                               </div>
+
+                               <div className="flex flex-wrap gap-2 w-full xl:w-auto items-center justify-start xl:justify-end">
+                                   {/* Title Filters */}
+                                   <div className="flex flex-wrap gap-2 items-center">
+                                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">Title</span>
+                                       <button onClick={() => handleTitleToggle('All')} className={`px-3 py-1 text-xs font-medium rounded-full transition-all border ${selectedTitles.length === 0 ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-500'}`}>All</button>
+                                       {uniqueTitles.map(title => (
+                                           <button key={title} onClick={() => handleTitleToggle(title)} className={`px-3 py-1 text-xs font-medium rounded-full transition-all border ${selectedTitles.includes(title) ? 'bg-blue-600 border-blue-600 text-white shadow-md' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-blue-400 hover:text-blue-500'}`}>{title}</button>
+                                       ))}
+                                       {selectedTitles.length > 0 && <button onClick={() => setSelectedTitles([])} className="ml-1 px-2 py-1 text-xs text-red-500 hover:text-red-700 hover:underline font-medium">Clear</button>}
+                                   </div>
+                               </div>
+                           </div>
+
+                           {filteredData.length === 0 ? ( 
+                               <div className="text-center p-12 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                                   <Search size={48} className="text-slate-300 dark:text-slate-600 mx-auto mb-4"/>
+                                   <p className="text-xl font-bold text-slate-600 dark:text-slate-300">No Employees Found</p>
+                                   <p className="text-slate-500 dark:text-slate-400">Try adjusting your filters or search terms.</p>
+                               </div> 
+                           ) : (
+                               <>
+                                   {viewMode === 'map' && (
+                                       <div className="space-y-8">
+                                            {Object.entries(groupedData).map(([lob, employees]) => (
+                                                <div key={lob}>
+                                                    <div className="flex items-center gap-4 mb-4"><h2 className="text-lg font-bold text-slate-800 dark:text-white">{lob}</h2><span className="text-xs bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 px-2 py-0.5 rounded-full font-semibold">{employees.length}</span><div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div></div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">{employees.map(e => <EmployeeWidget key={e.id} employee={e} onClick={() => openViewModal(e)} onEdit={openEditModal} onDelete={handleDelete}/>)}</div>
+                                                </div>
+                                            ))}
+                                       </div>
+                                   )}
+
+                                   {viewMode === 'list' && (
+                                       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm overflow-hidden border border-slate-200 dark:border-slate-700">
+                                           <table className="w-full text-left text-sm text-slate-600 dark:text-slate-300 table-fixed">
+                                               <thead className="bg-slate-50 dark:bg-slate-900 font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700">
+                                                   <tr>
+                                                       <th className="w-[20%] px-6 py-4 text-left align-middle uppercase tracking-wider text-xs">Name</th>
+                                                       <th className="w-[10%] px-4 py-4 text-center align-middle uppercase tracking-wider text-xs">HR ID</th>
+                                                       <th className="w-[15%] px-6 py-4 text-center align-middle uppercase tracking-wider text-xs">Title</th>
+                                                       <th className="w-[15%] px-6 py-4 text-center align-middle uppercase tracking-wider text-xs">Supervisor</th>
+                                                       <th className="w-[15%] max-w-[150px] px-6 py-4 text-center align-middle uppercase tracking-wider text-xs whitespace-normal break-words">LOB</th>
+                                                       <th className="w-[10%] px-6 py-4 text-center align-middle uppercase tracking-wider text-xs">Joined</th>
+                                                       <th className="w-[10%] px-6 py-4 text-center align-middle uppercase tracking-wider text-xs">Ended</th>
+                                                       <th className="w-[15%] px-6 py-4 text-right align-middle uppercase tracking-wider text-xs">Status & Actions</th>
+                                                   </tr>
+                                               </thead>
+                                               <tbody className="divide-y divide-slate-100 dark:divide-slate-700">
+                                                   {filteredData.map(e => <EmployeeRow key={e.id} employee={e} onClick={() => openViewModal(e)} onEdit={openEditModal} onDelete={handleDelete}/>)}
+                                               </tbody>
+                                           </table>
+                                       </div>
+                                   )}
+                               </>
+                           )}
+                       </>
+                   )}
+                </main>
+            </div>
+          );
+        }
+
+        const container = document.getElementById('root');
+        const root = createRoot(container);
+        root.render(<HeadcountDashboard />);
+    </script>
+</body>
+</html>
